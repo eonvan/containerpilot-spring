@@ -1,0 +1,75 @@
+consul:
+  image: autopilotpattern/consul:0.7.3r39
+  restart: always
+  dns:
+    - 127.0.0.1
+  labels:
+    - triton.cns.services=consul
+  ports:
+    - "8500:8500"
+  command: >
+    /usr/local/bin/containerpilot
+  environment:
+    - CONSUL_DEV=1
+prometheus:
+    image: autopilotpattern/prometheus:1.7.1-r20
+    restart: always
+    ports:
+      - "9090:9090"
+    links:
+      - consul:consul
+    environment:
+      - CONSUL=consul
+      - CONSUL_AGENT=1
+    dns:
+      - 127.0.0.1
+postgres:
+    image: autopilotpattern/postgres:9.6.4-r3
+    restart: always
+    mem_limit: 1g
+    restart: always
+    dns:
+      - 127.0.0.1
+    ports:
+      - 5432
+    environment:
+      - CONSUL=consul
+      - CONSUL_AGENT=1
+      - POSTGRES_USER=payments
+      - POSTGRES_PASSWORD=payments123
+      - POSTGRES_DB=payments
+      - PGDATA=/var/lib/postgresql/data
+    links:
+      - consul:consul
+processor:
+  build: services/
+  mem_limit: 1g
+  dns:
+    - 127.0.0.1  
+  links:
+    - consul:consul
+    - postgres:postgres
+    - mq:mq
+  environment:
+    - CONSUL=consul
+    - CONSUL_AGENT=1
+    - LOG_LEVEL=INFO
+  ports:
+    - "8080:8080"
+mq:
+  build: mq/
+  mem_limit: 1g
+  dns:
+    - 127.0.0.1  
+  links:
+    - consul:consul
+  environment:
+    - CONSUL=consul
+    - CONSUL_AGENT=1
+    - LICENSE=accept
+    - MQ_QMGR_NAME=QM_AC_PAYMENTS
+  volumes:
+    - /tmp/var/mqm:/tmp/var/mqm
+  ports:
+    - "1440:1440"
+      

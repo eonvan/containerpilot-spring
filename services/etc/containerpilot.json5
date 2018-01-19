@@ -1,0 +1,77 @@
+{
+  consul: '{{ if .CONSUL_AGENT }}localhost{{ else }}{{ .CONSUL | default "consul" }}{{ end }}:8500',
+  logging: {
+    level: '{{ .LOG_LEVEL | default "INFO" }}'
+  },
+  jobs: [
+    {
+      name: 'processor',
+      port: 8080,
+      exec: ['java', '-Dspring.profiles.active=local', '-Dmq.hostname=mq', 
+            '-Dmq.port=1440', '-Dspring.datasource.url=jdbc:postgresql://postgres:5432/payments', 
+            '-jar', '/opt/app/app.jar'],
+      when: {
+          source: 'mq',
+          once: 'healthy'
+      },
+      when: {
+          source: 'postgres',
+          once: 'healthy'
+      },
+      {{ if .CONSUL_AGENT }}
+      when: {
+        source: 'consul-agent',
+        once: 'healthy'
+      },{{ end }}            
+      health: {
+        exec: '/usr/bin/curl -o /dev/null --fail -s http://localhost:8080/health',
+        interval: 5,
+        ttl: 10,
+        timeout: "5s",
+      },
+      tags: [
+        'processor',
+        'app'
+      ]
+    },{{ if .CONSUL_AGENT }}
+    {
+      name: 'consul-agent',
+      exec: ['/usr/local/bin/consul', 'agent',
+                  '-data-dir=/data',
+                  '-config-dir=/config',
+                  '-log-level=err',
+                  '-rejoin',
+                  '-retry-join', '{{ .CONSUL | default "consul" }}',
+                  '-retry-max', '10',
+                  '-retry-interval', '10s'],
+      health: {
+        exec: 'curl -so /dev/null http://localhost:8500',
+        interval: 10,
+        ttl: 25
+      },
+      restarts: 'unlimited'
+    },
+    {{ end }}
+    {
+      name: 'sensor',
+      exec: '/usr/local/bin/./sensor.sh',
+      timeout: '5s',
+      when: {
+        interval: '5s'
+      },
+      restarts: 'unlimited'
+    }
+  ],
+  telemetry: {
+    port: 9090,
+    tags: ['processor','app'],
+    interfaces: ['eth0'],
+    metrics: [
+      {
+        name: 'free_memory',
+        help: 'Container OS free memory',
+        type: 'counter'
+      }
+    ]
+  }
+}

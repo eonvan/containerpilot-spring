@@ -1,0 +1,68 @@
+{
+  consul: '{{ if .CONSUL_AGENT }}localhost{{ else }}{{ .CONSUL | default "consul" }}{{ end }}:8500',
+  logging: {
+    level: '{{ .LOG_LEVEL | default "INFO" }}'
+  },
+  jobs: [
+    {
+      name: 'mq',
+      port: 1440,
+      exec: 'mq.sh',
+      restarts: 'unlimited',
+      {{ if .CONSUL_AGENT }}
+      when: {
+        source: 'consul-agent',
+        once: 'healthy'
+      },{{ end }}            
+      health: {
+        exec: ['dspmq'],
+        interval: 5,
+        ttl: 10,  
+        timeout: "5s",
+      },
+      tags: [
+        'mq',
+        'app'
+      ]
+    },{{ if .CONSUL_AGENT }}
+    {
+      name: 'consul-agent',
+      exec: ['/usr/local/bin/consul', 'agent',
+                  '-data-dir=/data',
+                  '-config-dir=/config',
+                  '-log-level=err',
+                  '-rejoin',
+                  '-retry-join', '{{ .CONSUL | default "consul" }}',
+                  '-retry-max', '10',
+                  '-retry-interval', '10s'],
+      health: {
+        exec: 'curl -so /dev/null http://localhost:8500',
+        interval: 10,
+        ttl: 25
+      },
+      restarts: 'unlimited'
+    },
+    {{ end }}
+    {
+      name: 'memory-sensor',
+      exec: '/usr/local/bin/./sensor.sh',
+      timeout: '5s',
+      when: {
+        interval: '5s'
+      },
+      restarts: 'unlimited'
+    }
+  ],
+  telemetry: {
+    port: 9090,
+    tags: ['mq','app'],
+    interfaces: ['eth1', 'eth0', 'eth0[1]', 'lo', 'lo0', 'inet'],
+    metrics: [
+      {
+        name: 'free_memory',
+        help: 'Amount of free memory',
+        type: 'gauge'
+      }
+    ]
+  }
+}
